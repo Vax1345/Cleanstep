@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CleanStep - Ultimate UI</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Heebo', 'sans-serif'] },
+                    colors: {
+                        primary: '#0F172A',
+                        accent: '#14B8A6',
+                        'accent-dark': '#0D9488',
+                        bubble: '#F1F5F9',
+                        'bubble-user': '#0F172A'
+                    },
+                    boxShadow: {
+                        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)',
+                        'float': '0 10px 40px -10px rgba(0,0,0,0.1)'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #f8fafc; overflow: hidden; touch-action: none; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .chat-scroll::-webkit-scrollbar { width: 0px; background: transparent; }
+        
+        .message-enter { animation: slideIn 0.3s ease-out forwards; opacity: 0; transform: translateY(10px); }
+        @keyframes slideIn { to { opacity: 1; transform: translateY(0); } }
+
+        .typing-bounce { animation: bounce 1.4s infinite ease-in-out both; }
+        .typing-bounce:nth-child(1) { animation-delay: -0.32s; }
+        .typing-bounce:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+    <div id="root" class="w-full h-full flex justify-center items-center"></div>
+
+    <script type="text/babel">
+            const API_KEY = "AIzaSyBP42g0a0MlqfG9PXJLjrrg3XF-dyZLJpg"; 
+             const Icons = {
+            User: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+            Send: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
+            Shield: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+            Refresh: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>,
+            Check: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        };
+
+        const personaData = {
+            friend: { name: "יוני (החבר)", role: "שותף לדרך", systemPrompt: "You are Yoni, a supportive best friend. Speak in Hebrew slang. Be warm, empathetic, and conversational. Never show thoughts.", introText: "אלן אחי, אני כאן. מה הדיבור?", buttonText: "דבר עם יוני" },
+            yedida: { name: "נועה (הידידה)", role: "תמיכה ורגש", systemPrompt: "You are Noa, a caring female friend. Soft, empathetic. Hebrew only. No thoughts.", introText: "היי, אני פה בשבילך. איך אתה?", buttonText: "דבר עם נועה" },
+            mentor: { name: "פרופ' אדלר", role: "מנטור", systemPrompt: "You are Professor Adler. Socratic mentor. Short, sharp questions. Hebrew only.", introText: "שלום צחי. מה האתגר כרגע?", buttonText: "התייעץ עם הפרופסור" },
+            robot: { name: "System Core", role: "מערכת", systemPrompt: "Logical System. Concise Hebrew. No thoughts.", introText: "מערכת מוכנה. הזן נתונים.", buttonText: "הפעלת מערכת" }
+        };
+
+        // --- Logic ---
+        let WORKING_MODEL_NAME = null;
+
+        async function findBestModel() {
+            if (!API_KEY.startsWith("AIza")) return null;
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+                const data = await response.json();
+                if (data.models) {
+                    const candidates = data.models.filter(m => m.supportedGenerationMethods?.includes("generateContent") && m.name.includes("gemini"));
+                    let chosen = candidates.find(m => m.name.includes("1.5-flash"));
+                    if (!chosen) chosen = candidates.find(m => m.name.includes("1.5-pro"));
+                    if (!chosen && candidates.length > 0) chosen = candidates[0];
+                    if (chosen) return chosen.name.replace("models/", "");
+                }
+            } catch (e) { }
+            return "gemini-pro";
+        }
+
+        function cleanText(text) {
+            if (!text) return "";
+            return text.replace(/^(THOUGHT|Thought|Thinking|Note):?[\s\S]*?(\n\n|$)/gm, "").replace(/\(thinking\)[\s\S]*?(?=\n|$)/gi, "").trim();
+        }
+
+        async function chatWithGemini(userMessage, personaKey, history) {
+            if (!WORKING_MODEL_NAME) WORKING_MODEL_NAME = await findBestModel();
+            const persona = personaData[personaKey];
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL_NAME}:generateContent?key=${API_KEY}`;
+            const contents = [
+                { role: "user", parts: [{ text: `System Instruction: ${persona.systemPrompt} \n\nIMPORTANT: Output ONLY the Hebrew response.` }] },
+                ...history.map(msg => ({ role: msg.sender === 'user' ? 'user' : 'model', parts: [{ text: msg.text }] })),
+                { role: "user", parts: [{ text: userMessage }] }
+            ];
+            try {
+                const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents, generationConfig: { temperature: 0.7, maxOutputTokens: 1000 } }) });
+                const data = await response.json();
+                if (data.candidates && data.candidates.length > 0) return cleanText(data.candidates[0].content.parts[0].text);
+                return "";
+            } catch (e) { return "שגיאת תקשורת."; }
+        }
+
+        // --- UI Components ---
+
+        const ChatScreen = ({ userPrefs, onReset }) => {
+            const loadMessages = () => {
+                const saved = localStorage.getItem(`chat_${userPrefs.persona}`);
+                return saved ? JSON.parse(saved) : [{ sender: 'ai', text: personaData[userPrefs.persona].introText }];
+            };
+            const [input, setInput] = React.useState("");
+            const [messages, setMessages] = React.useState(loadMessages);
+            const [isTyping, setIsTyping] = React.useState(false);
+            const chatEndRef = React.useRef(null);
+            
+            React.useEffect(() => {
+                localStorage.setItem(`chat_${userPrefs.persona}`, JSON.stringify(messages));
+                chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }, [messages, userPrefs.persona]);
+
+            const handleSend = async () => {
+                if (!input.trim()) return;
+                const txt = input;
+                setInput("");
+                setMessages(p => [...p, { sender: 'user', text: txt }]);
+                setIsTyping(true);
+                const res = await chatWithGemini(txt, userPrefs.persona, messages);
+                setIsTyping(false);
+                if (res) setMessages(p => [...p, { sender: 'ai', text: res }]);
+            };
+
+            const persona = personaData[userPrefs.persona];
+
+            return (
+                <div className="w-full h-full md:max-w-md md:h-[90vh] md:rounded-[3rem] shadow-glass bg-white flex flex-col relative overflow-hidden border-4 border-white">
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur-md p-4 flex justify-between items-center z-10 border-b border-gray-100 absolute top-0 w-full">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-slate-700 flex items-center justify-center text-white shadow-lg">
+                                <Icons.User className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <div className="font-bold text-primary text-sm">{persona.name}</div>
+                                <div className="text-xs text-green-500 font-medium flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> מחובר
+                                </div>
+                            </div>
+                        </div>
+                        <button onClick={onReset} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-primary transition-all"><Icons.Refresh className="w-4 h-4" /></button>
+                    </div>
+
+                    {/* Chat Area */}
+                    <div className="flex-1 overflow-y-auto p-4 pt-20 pb-20 space-y-4 bg-gray-50/50 chat-scroll">
+                        {messages.map((m, i) => (
+                            <div key={i} className={`flex w-full message-enter ${m.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
+                                <div className={`px-5 py-3 max-w-[80%] rounded-2xl text-[15px] leading-relaxed shadow-sm ${
+                                    m.sender === 'user' 
+                                    ? 'bg-primary text-white rounded-tr-sm' 
+                                    : 'bg-white text-gray-700 rounded-tl-sm border border-gray-100'
+                                }`}>
+                                    {m.text}
+                                </div>
+                            </div>
+                        ))}
+                        {isTyping && (
+                            <div className="flex w-full justify-end message-enter">
+                                <div className="px-4 py-3 bg-white rounded-2xl rounded-tl-sm border border-gray-100 shadow-sm flex gap-1">
+                                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full typing-bounce"></div>
+                                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full typing-bounce"></div>
+                                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full typing-bounce"></div>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Input Area */}
+                    <div className="absolute bottom-0 w-full bg-white p-4 border-t border-gray-100 pb-6">
+                        <div className="flex gap-2 items-center bg-gray-50 p-1.5 rounded-full border border-gray-200 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20 transition-all">
+                            <input 
+                                type="text" 
+                                value={input} 
+                                onChange={e => setInput(e.target.value)} 
+                                onKeyPress={e => e.key === 'Enter' && handleSend()} 
+                                placeholder="הקלד הודעה..." 
+                                className="flex-1 bg-transparent px-4 py-2 text-sm outline-none text-gray-700 placeholder-gray-400" 
+                            />
+                            <button 
+                                onClick={handleSend} 
+                                disabled={!input.trim()} 
+                                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-md transform active:scale-90 ${!input.trim() ? 'bg-gray-200 text-gray-400' : 'bg-primary text-white hover:bg-slate-800'}`}
+                            >
+                                <Icons.Send className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const OnboardingFlow = ({ onComplete }) => {
+            const [selected, setSelected] = React.useState(null);
+            
+            // Auto login check
+            React.useEffect(() => {
+                const saved = localStorage.getItem('user_persona');
+                if (saved && personaData[saved]) onComplete({ persona: saved });
+            }, []);
+
+            const confirm = () => {
+                localStorage.setItem('user_persona', selected);
+                onComplete({ persona: selected });
+            };
+
+            const Card = ({ id, data }) => (
+                <button onClick={() => setSelected(id)} className={`w-full p-4 rounded-2xl border transition-all duration-200 flex items-center justify-between group ${selected === id ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'}`}>
+                    <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md transition-transform group-hover:scale-105 ${id === 'friend' ? 'bg-teal-600' : id === 'yedida' ? 'bg-rose-500' : id === 'mentor' ? 'bg-indigo-600' : 'bg-slate-600'}`}>
+                            {id === 'friend' || id === 'mentor' ? <Icons.User className="w-6 h-6"/> : id === 'yedida' ? <Icons.Woman className="w-6 h-6"/> : <Icons.Cpu className="w-6 h-6"/>}
+                        </div>
+                        <div className="text-right">
+                            <div className="font-bold text-gray-800 text-base">{data.name}</div>
+                            <div className="text-xs text-gray-500 font-medium">{data.role}</div>
+                        </div>
+                    </div>
+                    {selected === id && <div className="text-accent animate-in"><Icons.Check className="w-6 h-6" /></div>}
+                </button>
+            );
+
+            return (
+                <div className="w-full h-full md:max-w-md md:h-[80vh] md:rounded-[3rem] bg-white shadow-glass p-8 flex flex-col justify-center text-center relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-slate-50 to-transparent -z-10"></div>
+                    
+                    <div className="w-20 h-20 bg-primary rounded-3xl mx-auto flex items-center justify-center mb-6 text-accent shadow-xl rotate-3 hover:rotate-6 transition-transform">
+                        <Icons.Shield className="w-10 h-10" />
+                    </div>
+                    
+                    <h1 className="text-3xl font-bold text-primary mb-2">CleanStep</h1>
+                    <p className="text-gray-400 text-sm mb-8">בחר את השותף שלך למסע</p>
+                    
+                    <div className="space-y-3 flex-1 overflow-y-auto pb-4 pr-1 chat-scroll">
+                        {Object.keys(personaData).map(key => <Card key={key} id={key} data={personaData[key]} />)}
+                    </div>
+                    
+                    <div className="mt-6 pt-4 border-t border-gray-100">
+                        {selected ? (
+                            <button onClick={confirm} className="w-full bg-primary text-white py-4 rounded-2xl font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transform hover:-translate-y-1 transition-all">
+                                {personaData[selected].buttonText}
+                            </button>
+                        ) : (
+                            <div className="text-xs text-gray-300 font-medium py-4">נא לבחור דמות להמשך</div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [isReady, setIsReady] = React.useState(false);
+            const [userPrefs, setUserPrefs] = React.useState(null);
+            
+            const handleReset = () => {
+                localStorage.removeItem('user_persona');
+                setUserPrefs(null);
+            };
+
+            React.useEffect(() => { setTimeout(() => setIsReady(true), 800); }, []);
+
+            if (!isReady) return (
+                <div className="flex flex-col items-center justify-center h-full w-full text-primary">
+                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-6 shadow-xl animate-bounce">
+                        <Icons.Shield className="w-8 h-8 text-accent" />
+                    </div>
+                </div>
+            );
+            
+            return (
+                <div className="w-full h-full flex items-center justify-center md:p-4 bg-gray-50">
+                    {!userPrefs ? <OnboardingFlow onComplete={setUserPrefs} /> : <ChatScreen userPrefs={userPrefs} onReset={handleReset} />}
+                </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
+
